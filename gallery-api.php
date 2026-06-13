@@ -5,10 +5,10 @@ header('Access-Control-Allow-Origin: *');
 // ==========================================
 // تنظیمات اتصال به دیتابیس
 // ==========================================
-$db_host    = 'localhost';
+$db_host    = '127.0.0.1:8889';
 $db_name    = 'baba';
 $db_user    = 'root';
-$db_pass    = '';
+$db_pass    = 'root';
 $db_charset = 'utf8mb4';
 
 // ==========================================
@@ -67,11 +67,7 @@ $test_paintings = [
 ];
 
 $action = $_GET['action'] ?? 'categories';
-$use_db = false;
-
-// ==========================================
 // اتصال دیتابیس
-// ==========================================
 try {
     $pdo = new PDO(
         "mysql:host=$db_host;dbname=$db_name;charset=$db_charset",
@@ -89,10 +85,10 @@ try {
 if ($action === 'categories') {
     if ($use_db) {
         $stmt = $pdo->query("
-            SELECT c.id, c.name, c.icon, COUNT(p.id) as count
+            SELECT c.id, c.name, c.icon, c.parent_id, COUNT(p.id) as count
             FROM painting_categories c
             LEFT JOIN paintings p ON p.category_id = c.id
-            GROUP BY c.id ORDER BY c.sort_order
+            GROUP BY c.id ORDER BY COALESCE(c.parent_id, c.id), c.parent_id IS NOT NULL, c.sort_order
         ");
         echo json_encode(['success'=>true,'data'=>$stmt->fetchAll()]);
     } else {
@@ -115,19 +111,33 @@ elseif ($action === 'paintings') {
     }
 
     if ($use_db) {
-        $cnt = $pdo->prepare("SELECT COUNT(*) FROM paintings WHERE category_id=:c");
-        $cnt->execute(['c'=>$cat_id]);
+        // پیدا کردن تمام زیرمجموعه‌ها
+        $cat_ids = [$cat_id];
+        $sub_stmt = $pdo->prepare("SELECT id FROM painting_categories WHERE parent_id = ?");
+        $sub_stmt->execute([$cat_id]);
+        $subs = $sub_stmt->fetchAll(PDO::FETCH_COLUMN);
+        if ($subs) {
+            $cat_ids = array_merge($cat_ids, $subs);
+        }
+
+        $placeholders = implode(',', array_fill(0, count($cat_ids), '?'));
+
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM paintings WHERE category_id IN ($placeholders)");
+        $cnt->execute($cat_ids);
         $total = (int)$cnt->fetchColumn();
 
         $stmt = $pdo->prepare("
             SELECT id, title, description, year, technique, thumb, fullsize
-            FROM paintings WHERE category_id=:c
+            FROM paintings WHERE category_id IN ($placeholders)
             ORDER BY sort_order, id
-            LIMIT :lim OFFSET :off
+            LIMIT ? OFFSET ?
         ");
-        $stmt->bindValue(':c',   $cat_id,   PDO::PARAM_INT);
-        $stmt->bindValue(':lim', $per_page, PDO::PARAM_INT);
-        $stmt->bindValue(':off', $offset,   PDO::PARAM_INT);
+        
+        foreach($cat_ids as $k => $id) {
+            $stmt->bindValue($k + 1, $id, PDO::PARAM_INT);
+        }
+        $stmt->bindValue(count($cat_ids) + 1, $per_page, PDO::PARAM_INT);
+        $stmt->bindValue(count($cat_ids) + 2, $offset, PDO::PARAM_INT);
         $stmt->execute();
 
         echo json_encode([

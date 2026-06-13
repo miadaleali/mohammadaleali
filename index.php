@@ -209,7 +209,7 @@
                     <div class="position-relative nav-bar">
                         <hr class="z-2 link-hr position-absolute ">
                         <button onclick="location.href='poetry.php'" class="">اشعار</button>
-                        <button class="">نقاشی</button>
+                        <button onclick="location.href='gallery.php'" class="">نقاشی</button>
                         <button class="">رمان</button>
                         <button class="">بیوگرافی</button>
                         <button class="">ارتباط</button>
